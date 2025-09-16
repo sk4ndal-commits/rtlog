@@ -37,6 +37,9 @@ impl Ui {
     pub fn draw(&mut self, state: &AppState) -> anyhow::Result<()> {
         let filter_regs = state.enabled_regexes();
         let highlights = state.active_highlight_regexes();
+        let alert_regs = state.alert_enabled_regexes();
+        let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+        let blink_on = (now_ms / 400) % 2 == 0;
         self.terminal.draw(|frame| {
             let area = frame.size();
 
@@ -80,6 +83,12 @@ impl Ui {
                     let text = &src.lines[i];
                     if line_matches(text, &filter_regs) {
                         let mut line = highlight_line(text, &highlights);
+                        // If this line matches an alert pattern, colorize it strongly
+                        if line_matches(text, &alert_regs) {
+                            // Make it red (and optionally flashing reverse)
+                            line = apply_line_color(line, Color::Red);
+                            if blink_on { line = apply_line_modifier(line, Modifier::REVERSED); }
+                        }
                         if let Some(sel) = selected_log { if sel == i { line = apply_line_modifier(line, Modifier::REVERSED); }}
                         lines.push(line);
                     }
@@ -144,6 +153,24 @@ impl Ui {
                     .block(Block::default().borders(Borders::ALL).title(title))
                     .wrap(Wrap { trim: false });
                 frame.render_widget(input, popup);
+            }
+
+            // Alert popup/banner (non-blocking)
+            if state.alert_deadline_ms > now_ms {
+                let msg = state.alert_message.clone().unwrap_or_else(|| "Alert".into());
+                let content = if blink_on { format!("⚠ ALERT: {}", msg) } else { format!("ALERT: {}", msg) };
+                let w = (area.width.saturating_sub(10)).min(60);
+                let h = 3;
+                let x = area.x + (area.width - w) / 2;
+                let y = area.y + 1; // near top
+                let popup = Rect::new(x, y, w, h);
+                frame.render_widget(Clear, popup);
+                let style = if blink_on { Style::default().fg(Color::Black).bg(Color::Red).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Red).add_modifier(Modifier::BOLD) };
+                let para = Paragraph::new(content)
+                    .block(Block::default().borders(Borders::ALL).title("ALERT"))
+                    .style(style)
+                    .wrap(Wrap { trim: true });
+                frame.render_widget(para, popup);
             }
         })?;
         Ok(())
@@ -245,6 +272,17 @@ fn apply_line_modifier(line: Line<'_>, modifier: Modifier) -> Line<'_> {
     let spans = line.spans.into_iter().map(|mut s| {
         let mut style = s.style;
         style = style.add_modifier(modifier);
+        s.style = style;
+        s
+    }).collect::<Vec<_>>();
+    Line::from(spans)
+}
+
+fn apply_line_color(line: Line<'_>, color: Color) -> Line<'_> {
+    // Apply a foreground color to all spans, preserving modifiers
+    let spans = line.spans.into_iter().map(|mut s| {
+        let mut style = s.style;
+        style = style.fg(color);
         s.style = style;
         s
     }).collect::<Vec<_>>();

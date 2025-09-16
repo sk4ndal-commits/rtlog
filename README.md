@@ -22,6 +22,7 @@ Core qualities:
 - New: Summary / Stats panel with live counts and sparklines for errors/warnings
 - New: Multi-source monitoring with a Sources sidebar and per-source focus
 - New: Search / Jump overlay to find and navigate matches quickly
+- New: Alerts / Highlighting for critical entries (ERROR, FATAL by default) with non-blocking flashing banner
 
 See docs/ for more details:
 - docs/features.md
@@ -69,6 +70,7 @@ Options:
 - -f, --follow         Follow the files for appended lines (tail -f)
 - -r, --regex PAT      Initial regex to highlight (case‑insensitive). This is optional; you can add more patterns from the Filter Panel at runtime.
 - -R, --recursive      When a PATH is a directory, include files from subdirectories recursively.
+-     --alert PAT      Pattern that triggers a visual alert (repeatable). Defaults: ERROR, FATAL.
 - -V, --version        Show version
 - -h, --help           Show help
 
@@ -146,6 +148,15 @@ Matching behavior:
 - Selecting a line: Use j/k (with the Filter Panel closed) to move the selection up/down in the main log view. The selected line is highlighted.
 - Display: Shows ±N neighboring lines around the selection (default N=3). The selected line is emphasized.
 - Scroll position: Opening and closing the Context View does not change your current scroll position in the main log view.
+
+## Alerts / Highlighting
+- Purpose: Visually surface critical lines immediately.
+- Defaults: ERROR and FATAL trigger alerts if you don't pass any --alert options.
+- User-defined: Use --alert multiple times to define your own patterns (literal, case-insensitive). Example: --alert timeout --alert "connection lost" --alert "panic".
+- Behavior:
+  - Lines matching an alert pattern are colored red in the main log view.
+  - A small non-blocking flashing banner appears near the top for ~3 seconds showing the alert text.
+  - The alert overlay never pauses auto-scroll or blocks input; it is purely visual and transient.
 
 ## Summary / Stats Panel
 - Always visible beneath the status bar.

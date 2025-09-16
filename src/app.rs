@@ -57,7 +57,7 @@ pub async fn run(config: Config) -> Result<()> {
     }
 
     // Initialize UI and state
-    let mut state = AppState::new(filter);
+    let mut state = AppState::new(filter, config.alerts.clone());
     let sources_meta = files.iter().map(|p| {
         let name = p.file_name().and_then(|s| s.to_str()).unwrap_or("?").to_string();
         (name, p.clone())

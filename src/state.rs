@@ -39,6 +39,11 @@ pub struct AppState {
     pub search_case_insensitive: bool,
     pub search_compiled: Option<regex::Regex>,
 
+    // Alerts
+    pub alert_rules: Vec<FilterRule>,
+    pub alert_deadline_ms: u128, // epoch millis until which alert is active
+    pub alert_message: Option<String>,
+
     // Context/details view (per focused source)
     pub context_panel_open: bool,
     pub context_radius: usize,
@@ -52,7 +57,7 @@ pub struct AppState {
 const SPARK_WINDOW: usize = 60;
 
 impl AppState {
-    pub fn new(initial_cli_regex: Option<regex::Regex>) -> Self {
+    pub fn new(initial_cli_regex: Option<regex::Regex>, alert_patterns: Vec<String>) -> Self {
         let now_sec = current_epoch_sec();
         let mut s = Self {
             sources: Vec::new(),
@@ -71,8 +76,14 @@ impl AppState {
             search_is_regex: false,
             search_case_insensitive: true,
             search_compiled: None,
+            // alerts
+            alert_rules: Vec::new(),
+            alert_deadline_ms: 0,
+            alert_message: None,
+            // context
             context_panel_open: false,
             context_radius: 3,
+            // stats
             err_buckets: VecDeque::from(vec![0; SPARK_WINDOW]),
             warn_buckets: VecDeque::from(vec![0; SPARK_WINDOW]),
             bucket_epoch_sec: now_sec.saturating_sub(SPARK_WINDOW as u64 - 1),
@@ -81,6 +92,12 @@ impl AppState {
             // We don't have the original pattern; store the regex string
             let rule = FilterRule { pattern: re.as_str().to_string(), is_regex: true, case_insensitive: true, whole_word: false, whole_line: false, enabled: true, compiled: Some(re), match_count: 0 };
             s.filters.push(rule);
+        }
+        // Initialize alert rules from patterns (treated as plain, case-insensitive substrings)
+        for p in alert_patterns {
+            let mut rule = FilterRule { pattern: p, is_regex: false, case_insensitive: true, whole_word: false, whole_line: false, enabled: true, compiled: None, match_count: 0 };
+            rule.ensure_compiled();
+            s.alert_rules.push(rule);
         }
         s
     }
@@ -104,6 +121,7 @@ impl AppState {
         // Update stats globally first to avoid borrow conflicts
         self.update_buckets_for_now();
         self.classify_and_count(&line);
+        self.check_and_trigger_alert(&line);
         if let Some(src) = self.sources.get_mut(source_id) {
             src.lines.push(line);
             if src.auto_scroll { src.scroll_offset = 0; }
@@ -275,6 +293,28 @@ impl AppState {
 }
 
 impl AppState {
+    pub fn alert_enabled_regexes(&self) -> Vec<regex::Regex> {
+        compile_enabled_rules(&self.alert_rules)
+    }
+    pub fn check_and_trigger_alert(&mut self, line: &str) {
+        if self.alert_rules.is_empty() { return; }
+        let regs = self.alert_enabled_regexes();
+        let mut matched = false;
+        'outer: for re in &regs {
+            if re.as_str().starts_with('^') && re.as_str().ends_with('$') {
+                if re.is_match(line) { matched = true; break 'outer; }
+            } else if re.find(line).is_some() { matched = true; break 'outer; }
+        }
+        if matched {
+            let now = current_epoch_millis();
+            self.alert_deadline_ms = now + 3000; // 3 seconds
+            // Keep a short message extract for display
+            let mut msg = line.trim().to_string();
+            if msg.len() > 120 { msg.truncate(120); }
+            self.alert_message = Some(msg);
+        }
+    }
+
     pub fn open_search(&mut self) {
         self.search_open = true;
         self.search_input.clear();
@@ -356,4 +396,9 @@ impl AppState {
 fn current_epoch_sec() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+}
+
+fn current_epoch_millis() -> u128 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)
 }
