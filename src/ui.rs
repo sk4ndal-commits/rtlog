@@ -85,9 +85,11 @@ impl Ui {
                         let mut line = highlight_line(text, &highlights);
                         // If this line matches an alert pattern, colorize it strongly
                         if line_matches(text, &alert_regs) {
-                            // Make it red (and optionally flashing reverse)
+                            // Make it red and optionally flashing reverse during active blink window
                             line = apply_line_color(line, Color::Red);
-                            if blink_on { line = apply_line_modifier(line, Modifier::REVERSED); }
+                            if now_ms < state.alert_blink_deadline_ms && blink_on {
+                                line = apply_line_modifier(line, Modifier::REVERSED);
+                            }
                         }
                         if let Some(sel) = selected_log { if sel == i { line = apply_line_modifier(line, Modifier::REVERSED); }}
                         lines.push(line);
@@ -158,14 +160,15 @@ impl Ui {
             // Alert popup/banner (non-blocking)
             if state.alert_deadline_ms > now_ms {
                 let msg = state.alert_message.clone().unwrap_or_else(|| "Alert".into());
-                let content = if blink_on { format!("⚠ ALERT: {}", msg) } else { format!("ALERT: {}", msg) };
+                let blink_active = now_ms < state.alert_blink_deadline_ms && blink_on;
+                let content = if blink_active { format!("⚠ ALERT: {}", msg) } else { format!("ALERT: {}", msg) };
                 let w = (area.width.saturating_sub(10)).min(60);
                 let h = 3;
                 let x = area.x + (area.width - w) / 2;
                 let y = area.y + 1; // near top
                 let popup = Rect::new(x, y, w, h);
                 frame.render_widget(Clear, popup);
-                let style = if blink_on { Style::default().fg(Color::Black).bg(Color::Red).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Red).add_modifier(Modifier::BOLD) };
+                let style = if blink_active { Style::default().fg(Color::Black).bg(Color::Red).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Red).add_modifier(Modifier::BOLD) };
                 let para = Paragraph::new(content)
                     .block(Block::default().borders(Borders::ALL).title("ALERT"))
                     .style(style)

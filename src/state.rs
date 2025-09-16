@@ -8,6 +8,7 @@ pub enum FilterFocus { #[default] Input, List }
 #[derive(Debug, Default)]
 pub struct Source {
     pub name: String,
+    #[allow(dead_code)]
     pub path: PathBuf,
     pub lines: Vec<String>,
     pub scroll_offset: usize,
@@ -41,7 +42,8 @@ pub struct AppState {
 
     // Alerts
     pub alert_rules: Vec<FilterRule>,
-    pub alert_deadline_ms: u128, // epoch millis until which alert is active
+    pub alert_deadline_ms: u128, // epoch millis until which alert banner is visible
+    pub alert_blink_deadline_ms: u128, // epoch millis until which blinking is active
     pub alert_message: Option<String>,
 
     // Context/details view (per focused source)
@@ -79,6 +81,7 @@ impl AppState {
             // alerts
             alert_rules: Vec::new(),
             alert_deadline_ms: 0,
+            alert_blink_deadline_ms: 0,
             alert_message: None,
             // context
             context_panel_open: false,
@@ -307,7 +310,8 @@ impl AppState {
         }
         if matched {
             let now = current_epoch_millis();
-            self.alert_deadline_ms = now + 3000; // 3 seconds
+            self.alert_deadline_ms = now + 3000; // 3 seconds banner visibility
+            self.alert_blink_deadline_ms = now + 10_000; // stop blinking after 10 seconds
             // Keep a short message extract for display
             let mut msg = line.trim().to_string();
             if msg.len() > 120 { msg.truncate(120); }

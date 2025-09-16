@@ -71,6 +71,7 @@ Options:
 - -r, --regex PAT      Initial regex to highlight (case‑insensitive). This is optional; you can add more patterns from the Filter Panel at runtime.
 - -R, --recursive      When a PATH is a directory, include files from subdirectories recursively.
 -     --alert PAT      Pattern that triggers a visual alert (repeatable). Defaults: ERROR, FATAL.
+-     --no-alerts      Disable alerts entirely (no banner and no red highlights)
 - -V, --version        Show version
 - -h, --help           Show help
 
@@ -153,6 +154,7 @@ Matching behavior:
 - Purpose: Visually surface critical lines immediately.
 - Defaults: ERROR and FATAL trigger alerts if you don't pass any --alert options.
 - User-defined: Use --alert multiple times to define your own patterns (literal, case-insensitive). Example: --alert timeout --alert "connection lost" --alert "panic".
+- Disable: Pass --no-alerts to disable alerts entirely (no banner and no red highlights).
 - Behavior:
   - Lines matching an alert pattern are colored red in the main log view.
   - A small non-blocking flashing banner appears near the top for ~3 seconds showing the alert text.

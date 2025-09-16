@@ -34,16 +34,27 @@ struct Args {
     /// Patterns that trigger visual alerts (repeatable). Defaults to ERROR and FATAL if none provided.
     #[arg(long = "alert")]
     alerts: Vec<String>,
+
+    /// Disable alerts entirely (no red highlights, no banner)
+    #[arg(long = "no-alerts")]
+    no_alerts: bool,
 }
 
 /// Parse CLI options into an application Config
 pub fn parse() -> Config {
     let args = Args::parse();
+    let alerts = if args.no_alerts {
+        Vec::new()
+    } else if args.alerts.is_empty() {
+        vec!["ERROR".into(), "FATAL".into()]
+    } else {
+        args.alerts
+    };
     Config {
         inputs: args.inputs,
         follow: args.follow,
         regex: args.regex,
         recursive: args.recursive,
-        alerts: if args.alerts.is_empty() { vec!["ERROR".into(), "FATAL".into()] } else { args.alerts },
+        alerts,
     }
 }
