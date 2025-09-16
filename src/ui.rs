@@ -66,12 +66,13 @@ impl Ui {
             frame.render_widget(side, cols[0]);
 
             // Right area: logs, status, stats, and optional context/filter panels
-            let mut constraints = vec![Constraint::Min(1), Constraint::Length(1), Constraint::Length(5)];
+            // Increase stats panel height to show more filter summaries
+            let mut constraints = vec![Constraint::Min(1), Constraint::Length(1), Constraint::Length(10)];
             if state.context_panel_open {
                 let h = (state.context_radius * 2 + 3) as u16;
                 constraints.push(Constraint::Length(h.max(5)));
             }
-            if state.filter_panel_open { constraints.push(Constraint::Length(4)); }
+            if state.filter_panel_open { constraints.push(Constraint::Length(10)); }
             let chunks = Layout::default().direction(Direction::Vertical).constraints(constraints).split(cols[1]);
 
             // Determine visible slice from the focused source
@@ -403,8 +404,8 @@ pub fn poll_input(state: &AppState) -> anyhow::Result<UiEvent> {
                     KeyCode::Char('d') => UiEvent::DeleteFilter,
                     KeyCode::Char('k') => UiEvent::SelectUp,
                     KeyCode::Char('j') => UiEvent::SelectDown,
-                    KeyCode::Char('n') if key.modifiers.is_empty() => UiEvent::NextMatch,
-                    KeyCode::Char('N') => UiEvent::PrevMatch,
+                    KeyCode::Char('n') if key.modifiers.is_empty() && !(state.filter_panel_open && matches!(state.filter_focus, FilterFocus::Input)) => UiEvent::NextMatch,
+                    KeyCode::Char('N') if !(state.filter_panel_open && matches!(state.filter_focus, FilterFocus::Input)) => UiEvent::PrevMatch,
                     KeyCode::Char(c) if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT => UiEvent::InputChar(c),
                     _ => UiEvent::None,
                 });
