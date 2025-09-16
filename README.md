@@ -17,6 +17,7 @@ Core qualities:
 - Quickly enable/disable filters and delete them
 - Smooth auto‑scroll with pause/resume
 - Scrollback navigation (Up/Down, PageUp/PageDown, Home/End)
+- Context/Details view: inspect ±N lines around a selected entry without losing scroll position
 - Status bar with line count, scroll offset, auto-scroll mode, and active filters
 
 See docs/ for more details:
@@ -62,7 +63,7 @@ Arguments:
 
 Options:
 - -f, --follow       Follow the file for appended lines (tail -f)
-- -e, --regex PAT    Initial regex to highlight (case‑insensitive). This is optional; you can add more patterns from the Filter Panel at runtime.
+- -r, --regex PAT    Initial regex to highlight (case‑insensitive). This is optional; you can add more patterns from the Filter Panel at runtime.
 - -V, --version      Show version
 - -h, --help         Show help
 
@@ -88,12 +89,12 @@ Notes:
 - PageUp/Down  Scroll by 10
 - Home/End   Jump to top/bottom
 - /          Open/close Filter Panel
-- Enter      Add filter from input
+- Enter      When Filter Panel open: add filter from input; otherwise: open/close Context View for the selected log line
 - Backspace  Delete last character in filter input
 - Tab        Switch focus between input and filter list
 - r/i/w/x    Toggle flags on filter input: regex, case-insensitive, whole-word, whole-line
 - d          Delete selected filter (when Filter Panel list has focus)
-- j/k        Move selection down/up in filter list
+- j/k        Move selection down/up (in Filter Panel list when open; otherwise selects a log line in the main view)
 
 Status bar shows: total lines, current scroll offset, auto‑scroll mode, active filter count, and current input flags.
 
@@ -116,6 +117,13 @@ Matching behavior:
 - If no filters are enabled, all lines are shown.
 - If one or more filters are enabled, a line is shown if it matches any enabled filter (logical OR).
 - Highlights are applied to all matching ranges from all enabled filters.
+
+## Context / Details View
+- Purpose: Inspect lines around a selected log entry to understand its context.
+- Open/close: Press Enter when the Filter Panel is closed. This toggles the Context View for the currently selected log line.
+- Selecting a line: Use j/k (with the Filter Panel closed) to move the selection up/down in the main log view. The selected line is highlighted.
+- Display: Shows ±N neighboring lines around the selection (default N=3). The selected line is emphasized.
+- Scroll position: Opening and closing the Context View does not change your current scroll position in the main log view.
 
 
 ## How it works (high level)

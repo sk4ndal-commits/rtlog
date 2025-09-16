@@ -22,6 +22,12 @@ pub struct AppState {
     pub input_whole_line: bool,
     pub filter_focus: FilterFocus,
     pub selected_filter: usize,
+
+    // Context/details view
+    pub context_panel_open: bool,
+    pub context_radius: usize,
+    // Selected log line (absolute index in lines vec)
+    pub selected_log: Option<usize>,
 }
 
 impl AppState {
@@ -39,6 +45,9 @@ impl AppState {
             input_whole_line: false,
             filter_focus: FilterFocus::Input,
             selected_filter: 0,
+            context_panel_open: false,
+            context_radius: 3,
+            selected_log: None,
         };
         if let Some(re) = initial_cli_regex {
             // We don't have the original pattern; store the regex string
@@ -93,6 +102,28 @@ impl AppState {
     }
     pub fn move_selection_down(&mut self) {
         if self.selected_filter + 1 < self.filters.len() { self.selected_filter += 1; }
+    }
+
+    pub fn ensure_log_selection(&mut self) {
+        if self.selected_log.is_none() {
+            let end = self.lines.len().saturating_sub(self.scroll_offset);
+            let sel = end.saturating_sub(1);
+            self.selected_log = if self.lines.is_empty() { None } else { Some(sel) };
+        }
+    }
+
+    pub fn move_log_selection_up(&mut self) {
+        self.ensure_log_selection();
+        if let Some(idx) = self.selected_log.as_mut() {
+            if *idx > 0 { *idx -= 1; }
+        }
+    }
+    pub fn move_log_selection_down(&mut self) {
+        self.ensure_log_selection();
+        if let Some(idx) = self.selected_log.as_mut() {
+            let max = self.lines.len().saturating_sub(1);
+            if *idx < max { *idx += 1; }
+        }
     }
 
     pub fn scroll_up(&mut self, n: usize) {

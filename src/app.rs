@@ -49,6 +49,11 @@ pub async fn run(config: Config) -> Result<()> {
             UiEvent::ToggleAuto => state.toggle_auto_scroll(),
 
             UiEvent::ToggleFilterPanel => { state.filter_panel_open = !state.filter_panel_open; },
+            UiEvent::ToggleContextPanel => {
+                // Initialize selection if needed, then toggle
+                state.ensure_log_selection();
+                state.context_panel_open = !state.context_panel_open;
+            }
             UiEvent::InputChar(c) => {
                 if state.filter_panel_open && matches!(state.filter_focus, FilterFocus::Input) { state.filter_input.push(c); }
             }
@@ -65,8 +70,8 @@ pub async fn run(config: Config) -> Result<()> {
             UiEvent::ToggleFilterEnabled => { if state.filter_panel_open { state.toggle_selected_filter(); } }
             UiEvent::DeleteFilter => { if state.filter_panel_open { state.remove_selected_filter(); } }
             UiEvent::FocusNext => { if state.filter_panel_open { state.filter_focus = match state.filter_focus { FilterFocus::Input => FilterFocus::List, FilterFocus::List => FilterFocus::Input }; } }
-            UiEvent::SelectUp => { if state.filter_panel_open { state.move_selection_up(); } }
-            UiEvent::SelectDown => { if state.filter_panel_open { state.move_selection_down(); } }
+            UiEvent::SelectUp => { if state.filter_panel_open { state.move_selection_up(); } else { state.move_log_selection_up(); } }
+            UiEvent::SelectDown => { if state.filter_panel_open { state.move_selection_down(); } else { state.move_log_selection_down(); } }
         }
 
         // Draw at most 30fps
