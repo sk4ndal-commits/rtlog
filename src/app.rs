@@ -111,6 +111,17 @@ pub async fn run(config: Config) -> Result<()> {
             UiEvent::SelectDown => { if state.filter_panel_open { state.move_selection_down(); } else { state.move_log_selection_down(); } }
             UiEvent::NextSource => { state.focus_next_source(); }
             UiEvent::PrevSource => { state.focus_prev_source(); }
+
+            // Search controls
+            UiEvent::ToggleSearch => { state.open_search(); }
+            UiEvent::CloseSearch => { state.close_search(); }
+            UiEvent::SearchChar(c) => { state.search_push_char(c); }
+            UiEvent::SearchBackspace => { state.search_pop_char(); }
+            UiEvent::ApplySearch => { state.apply_search(); state.search_open = false; }
+            UiEvent::NextMatch => { let _ = state.jump_next_match(); }
+            UiEvent::PrevMatch => { let _ = state.jump_prev_match(); }
+            UiEvent::ToggleSearchRegex => { state.search_is_regex = !state.search_is_regex; }
+            UiEvent::ToggleSearchCase => { state.search_case_insensitive = !state.search_case_insensitive; }
         }
 
         // Draw at most 30fps

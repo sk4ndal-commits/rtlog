@@ -32,6 +32,13 @@ pub struct AppState {
     pub filter_focus: FilterFocus,
     pub selected_filter: usize,
 
+    // Search overlay (global, affects highlighting and jump)
+    pub search_open: bool,
+    pub search_input: String,
+    pub search_is_regex: bool,
+    pub search_case_insensitive: bool,
+    pub search_compiled: Option<regex::Regex>,
+
     // Context/details view (per focused source)
     pub context_panel_open: bool,
     pub context_radius: usize,
@@ -59,6 +66,11 @@ impl AppState {
             input_whole_line: false,
             filter_focus: FilterFocus::Input,
             selected_filter: 0,
+            search_open: false,
+            search_input: String::new(),
+            search_is_regex: false,
+            search_case_insensitive: true,
+            search_compiled: None,
             context_panel_open: false,
             context_radius: 3,
             err_buckets: VecDeque::from(vec![0; SPARK_WINDOW]),
@@ -259,6 +271,85 @@ impl AppState {
     pub fn focus_prev_source(&mut self) {
         if self.sources.is_empty() { return; }
         if self.focused == 0 { self.focused = self.sources.len() - 1; } else { self.focused -= 1; }
+    }
+}
+
+impl AppState {
+    pub fn open_search(&mut self) {
+        self.search_open = true;
+        self.search_input.clear();
+    }
+    pub fn close_search(&mut self) {
+        self.search_open = false;
+    }
+    pub fn search_push_char(&mut self, c: char) {
+        self.search_input.push(c);
+    }
+    pub fn search_pop_char(&mut self) {
+        self.search_input.pop();
+    }
+    pub fn apply_search(&mut self) {
+        if self.search_input.is_empty() {
+            self.search_compiled = None;
+            return;
+        }
+        // Build regex from search_input and flags
+        let pat = if self.search_is_regex { self.search_input.clone() } else { regex::escape(&self.search_input) };
+        let mut builder = regex::RegexBuilder::new(&pat);
+        builder.case_insensitive(self.search_case_insensitive);
+        self.search_compiled = builder.build().ok();
+        // Jump to first match from top of visible window
+        let _ = self.jump_next_match();
+    }
+    pub fn active_highlight_regexes(&self) -> Vec<regex::Regex> {
+        let mut regs = self.enabled_regexes();
+        if let Some(re) = &self.search_compiled {
+            regs.push(re.clone());
+        }
+        regs
+    }
+    pub fn jump_next_match(&mut self) -> Option<usize> {
+        let Some(src) = self.current_source() else { return None; };
+        if src.lines.is_empty() { return None; }
+        let start_idx = src.selected_log.unwrap_or_else(|| src.lines.len().saturating_sub(1));
+        let total = src.lines.len();
+        let mut idx = start_idx;
+        for _ in 0..total {
+            idx = (idx + 1) % total;
+            if self.line_matches_search(&src.lines[idx]) { self.jump_to(idx); return Some(idx); }
+        }
+        None
+    }
+    pub fn jump_prev_match(&mut self) -> Option<usize> {
+        let Some(src) = self.current_source() else { return None; };
+        if src.lines.is_empty() { return None; }
+        let start_idx = src.selected_log.unwrap_or_else(|| src.lines.len().saturating_sub(1));
+        let total = src.lines.len();
+        let mut idx = start_idx;
+        for _ in 0..total {
+            idx = if idx == 0 { total - 1 } else { idx - 1 };
+            if self.line_matches_search(&src.lines[idx]) { self.jump_to(idx); return Some(idx); }
+        }
+        None
+    }
+    fn line_matches_search(&self, text: &str) -> bool {
+        if let Some(re) = &self.search_compiled {
+            if re.as_str().starts_with('^') && re.as_str().ends_with('$') { re.is_match(text) } else { re.find(text).is_some() }
+        } else if !self.search_input.is_empty() {
+            if self.search_case_insensitive { text.to_ascii_lowercase().contains(&self.search_input.to_ascii_lowercase()) } else { text.contains(&self.search_input) }
+        } else { false }
+    }
+    fn jump_to(&mut self, idx: usize) {
+        if let Some(src) = self.current_source_mut() {
+            src.selected_log = Some(idx);
+            src.auto_scroll = false;
+            // Adjust scroll so that idx is visible near bottom of viewport when possible
+            let viewport = 20usize; // rough guess; actual height determined in UI, but this keeps it visible
+            let total = src.lines.len();
+            let from_bottom = total.saturating_sub(idx + 1);
+            // scroll_offset is number of lines from bottom hidden
+            src.scroll_offset = from_bottom.saturating_sub(viewport/2);
+        }
     }
 }
 

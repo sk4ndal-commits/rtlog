@@ -5,7 +5,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Style, Modifier, Color};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph, Wrap, List, ListItem, Sparkline};
+use ratatui::widgets::{Block, Borders, Paragraph, Wrap, List, ListItem, Sparkline, Clear};
 use ratatui::Terminal;
 use std::io;
 
@@ -35,7 +35,8 @@ impl Ui {
     }
 
     pub fn draw(&mut self, state: &AppState) -> anyhow::Result<()> {
-        let enabled = state.enabled_regexes();
+        let filter_regs = state.enabled_regexes();
+        let highlights = state.active_highlight_regexes();
         self.terminal.draw(|frame| {
             let area = frame.size();
 
@@ -77,8 +78,8 @@ impl Ui {
             if let Some(src) = state.current_source() {
                 for i in start..end {
                     let text = &src.lines[i];
-                    if line_matches(text, &enabled) {
-                        let mut line = highlight_line(text, &enabled);
+                    if line_matches(text, &filter_regs) {
+                        let mut line = highlight_line(text, &highlights);
                         if let Some(sel) = selected_log { if sel == i { line = apply_line_modifier(line, Modifier::REVERSED); }}
                         lines.push(line);
                     }
@@ -93,7 +94,7 @@ impl Ui {
             frame.render_widget(para, chunks[0]);
 
             // Status bar: show active filters count and flags of input
-            let active = enabled.len();
+            let active = filter_regs.len();
             let (auto, so) = if let Some(src) = state.current_source() { (src.auto_scroll, src.scroll_offset) } else { (true, 0) };
             let status = format!(
                 "Lines: {}  Scroll: {}  Mode: {}  Filters: {}  [/] Filter Panel  Enter:{}  r:regex={} i:case={} w:word={} x:line={}",
@@ -128,6 +129,21 @@ impl Ui {
 
             if state.filter_panel_open {
                 draw_filter_panel(frame, chunks[next_chunk], state);
+            }
+
+            // Search overlay input (temporary)
+            if state.search_open {
+                let w = (area.width.saturating_sub(10)).min(60);
+                let h = 3;
+                let x = area.x + (area.width - w) / 2;
+                let y = area.y + (area.height - h) / 2;
+                let popup = Rect::new(x, y, w, h);
+                frame.render_widget(Clear, popup);
+                let title = format!("Search (r:{} i:{}) - Enter:apply Esc:close", state.search_is_regex, state.search_case_insensitive);
+                let input = Paragraph::new(state.search_input.clone())
+                    .block(Block::default().borders(Borders::ALL).title(title))
+                    .wrap(Wrap { trim: false });
+                frame.render_widget(input, popup);
             }
         })?;
         Ok(())
@@ -289,12 +305,34 @@ pub enum UiEvent {
     SelectDown,
     NextSource,
     PrevSource,
+
+    // Search
+    ToggleSearch,
+    CloseSearch,
+    SearchChar(char),
+    SearchBackspace,
+    ApplySearch,
+    NextMatch,
+    PrevMatch,
+    ToggleSearchRegex,
+    ToggleSearchCase,
 }
 
 pub fn poll_input(state: &AppState) -> anyhow::Result<UiEvent> {
     if event::poll(std::time::Duration::from_millis(10))? {
         if let Event::Key(key) = event::read()? {
             if key.kind == KeyEventKind::Press {
+                if state.search_open {
+                    return Ok(match key.code {
+                        KeyCode::Esc => UiEvent::CloseSearch,
+                        KeyCode::Enter => UiEvent::ApplySearch,
+                        KeyCode::Backspace => UiEvent::SearchBackspace,
+                        KeyCode::Char('r') => UiEvent::ToggleSearchRegex,
+                        KeyCode::Char('i') => UiEvent::ToggleSearchCase,
+                        KeyCode::Char(c) if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT => UiEvent::SearchChar(c),
+                        _ => UiEvent::None,
+                    });
+                }
                 return Ok(match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => UiEvent::Quit,
                     KeyCode::Up => UiEvent::ScrollUp(1),
@@ -306,6 +344,7 @@ pub fn poll_input(state: &AppState) -> anyhow::Result<UiEvent> {
                     KeyCode::Char(' ') if key.modifiers.is_empty() => { if state.filter_panel_open && matches!(state.filter_focus, FilterFocus::List) { UiEvent::ToggleFilterEnabled } else { UiEvent::ToggleAuto } },
 
                     KeyCode::Char('/') => UiEvent::ToggleFilterPanel,
+                    KeyCode::Char('?') => UiEvent::ToggleSearch,
                     KeyCode::Enter => { if state.filter_panel_open { UiEvent::AddFilter } else { UiEvent::ToggleContextPanel } },
                     KeyCode::Backspace => UiEvent::Backspace,
                     KeyCode::Tab => UiEvent::FocusNext,
@@ -319,6 +358,8 @@ pub fn poll_input(state: &AppState) -> anyhow::Result<UiEvent> {
                     KeyCode::Char('d') => UiEvent::DeleteFilter,
                     KeyCode::Char('k') => UiEvent::SelectUp,
                     KeyCode::Char('j') => UiEvent::SelectDown,
+                    KeyCode::Char('n') if key.modifiers.is_empty() => UiEvent::NextMatch,
+                    KeyCode::Char('N') => UiEvent::PrevMatch,
                     KeyCode::Char(c) if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT => UiEvent::InputChar(c),
                     _ => UiEvent::None,
                 });

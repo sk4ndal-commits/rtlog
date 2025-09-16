@@ -21,6 +21,7 @@ Core qualities:
 - Status bar with line count, scroll offset, auto-scroll mode, and active filters
 - New: Summary / Stats panel with live counts and sparklines for errors/warnings
 - New: Multi-source monitoring with a Sources sidebar and per-source focus
+- New: Search / Jump overlay to find and navigate matches quickly
 
 See docs/ for more details:
 - docs/features.md
@@ -105,12 +106,15 @@ Notes:
 - PageUp/Down  Scroll by 10
 - Home/End   Jump to top/bottom
 - /          Open/close Filter Panel
-- Enter      When Filter Panel open: add filter from input; otherwise: open/close Context View for the selected log line
-- Backspace  Delete last character in filter input
+- ?          Open Search overlay (temporary popup)
+- Enter      When Filter Panel open: add filter from input; when Search overlay open: apply search; otherwise: open/close Context View for the selected log line
+- Backspace  Delete last character in current input (Filter Panel or Search overlay)
 - Tab        Switch focus between input and filter list
 - Shift+Tab  Switch to previous source (in Sources sidebar)
 - [ / ]      Switch focused source backward/forward (Sources sidebar); main log view updates to that source
 - r/i/w/x    Toggle flags on filter input: regex, case-insensitive, whole-word, whole-line
+- In Search overlay: r toggles regex mode; i toggles case-insensitive
+- n / N      Jump to next / previous match (uses the last applied search)
 - d          Delete selected filter (when Filter Panel list has focus)
 - j/k        Move selection down/up (in Filter Panel list when open; otherwise selects a log line in the main view)
 
