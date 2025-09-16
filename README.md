@@ -12,9 +12,12 @@ Core qualities:
 ## Features
 - Follow a log file (tail -f–like)
 - Regex highlighting (case‑insensitive)
+- Real-time multi-pattern filtering with a Filter Panel
+- Toggle whole-word (-w) and whole-line (-x) matching per filter
+- Quickly enable/disable filters and delete them
 - Smooth auto‑scroll with pause/resume
 - Scrollback navigation (Up/Down, PageUp/PageDown, Home/End)
-- Status bar with line count, scroll offset, and mode indicator
+- Status bar with line count, scroll offset, auto-scroll mode, and active filters
 
 See docs/ for more details:
 - docs/features.md
@@ -59,7 +62,7 @@ Arguments:
 
 Options:
 - -f, --follow       Follow the file for appended lines (tail -f)
-- -e, --regex PAT  Regex filter to highlight matches (case‑insensitive)
+- -e, --regex PAT    Initial regex to highlight (case‑insensitive). This is optional; you can add more patterns from the Filter Panel at runtime.
 - -V, --version      Show version
 - -h, --help         Show help
 
@@ -73,24 +76,53 @@ Examples:
   rtlog -e "\b(\d{1,3}\.){3}\d{1,3}\b" ./app.log
   ```
 
-Note: Current version expects a file path. Piped stdin input is not yet supported.
+Notes:
+- Current version expects a file path. Piped stdin input is not yet supported.
+- The Filter Panel is the primary way to add multiple filters interactively; CLI -e is kept for convenience and backward compatibility.
 
 
 ## TUI Controls
 - q or Esc   Quit
-- Space      Toggle auto‑scroll (Auto/Paused)
+- Space      Toggle auto‑scroll (Auto/Paused) or toggle selected filter when Filter Panel list has focus
 - Up/Down    Scroll by 1
 - PageUp/Down  Scroll by 10
 - Home/End   Jump to top/bottom
+- /          Open/close Filter Panel
+- Enter      Add filter from input
+- Backspace  Delete last character in filter input
+- Tab        Switch focus between input and filter list
+- r/i/w/x    Toggle flags on filter input: regex, case-insensitive, whole-word, whole-line
+- d          Delete selected filter (when Filter Panel list has focus)
+- j/k        Move selection down/up in filter list
 
-Status bar shows: total lines, current scroll offset, and auto‑scroll mode.
+Status bar shows: total lines, current scroll offset, auto‑scroll mode, active filter count, and current input flags.
+
+
+## Filter Panel
+- Open/close with `/`. The panel shows an input line and the list of active filters.
+- Type a pattern in the input. Press Enter to add it as a new filter rule.
+- Flags on input:
+  - r: treat input as regex (otherwise literal text)
+  - i: case-insensitive matching (default on)
+  - w: whole-word match (wraps with word boundaries)
+  - x: whole-line match (anchors with ^ and $)
+- Focus: use Tab to switch between input and filter list.
+- In the filter list:
+  - Space toggles the selected filter enabled/disabled
+  - d deletes the selected filter
+  - j/k move selection down/up
+
+Matching behavior:
+- If no filters are enabled, all lines are shown.
+- If one or more filters are enabled, a line is shown if it matches any enabled filter (logical OR).
+- Highlights are applied to all matching ranges from all enabled filters.
 
 
 ## How it works (high level)
 - Async runtime (Tokio) streams file lines without blocking rendering.
 - A background task tails the file (when --follow is enabled).
-- The UI layer (ratatui + crossterm) renders the main log view and a status bar.
-- Regex highlights are applied to visible lines only for performance.
+- The UI layer (ratatui + crossterm) renders the main log view, status bar, and the Filter Panel.
+- Highlights and filtering are applied to visible lines only for performance.
 - UI and processing communicate through lightweight state and events.
 
 

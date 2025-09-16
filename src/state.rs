@@ -1,4 +1,7 @@
-use regex::Regex;
+use crate::filter::{compile_enabled_rules, FilterRule};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FilterFocus { #[default] Input, List }
 
 #[derive(Default)]
 pub struct AppState {
@@ -8,18 +11,41 @@ pub struct AppState {
     pub scroll_offset: usize,
     // Whether auto-scroll is enabled; when user scrolls, this becomes false
     pub auto_scroll: bool,
-    // Optional compiled filter regex for highlight
-    pub filter: Option<Regex>,
+
+    // Filter system
+    pub filters: Vec<FilterRule>,
+    pub filter_panel_open: bool,
+    pub filter_input: String,
+    pub input_is_regex: bool,
+    pub input_case_insensitive: bool,
+    pub input_whole_word: bool,
+    pub input_whole_line: bool,
+    pub filter_focus: FilterFocus,
+    pub selected_filter: usize,
 }
 
 impl AppState {
-    pub fn new(filter: Option<Regex>) -> Self {
-        Self {
+    pub fn new(initial_cli_regex: Option<regex::Regex>) -> Self {
+        let mut s = Self {
             lines: Vec::new(),
             scroll_offset: 0,
             auto_scroll: true,
-            filter,
+            filters: Vec::new(),
+            filter_panel_open: false,
+            filter_input: String::new(),
+            input_is_regex: false,
+            input_case_insensitive: true,
+            input_whole_word: false,
+            input_whole_line: false,
+            filter_focus: FilterFocus::Input,
+            selected_filter: 0,
+        };
+        if let Some(re) = initial_cli_regex {
+            // We don't have the original pattern; store the regex string
+            let rule = FilterRule { pattern: re.as_str().to_string(), is_regex: true, case_insensitive: true, whole_word: false, whole_line: false, enabled: true };
+            s.filters.push(rule);
         }
+        s
     }
 
     pub fn push_line(&mut self, line: String) {
@@ -27,6 +53,46 @@ impl AppState {
         if self.auto_scroll {
             self.scroll_offset = 0;
         }
+    }
+
+    pub fn enabled_regexes(&self) -> Vec<regex::Regex> {
+        compile_enabled_rules(&self.filters)
+    }
+
+    pub fn add_filter_from_input(&mut self) {
+        if self.filter_input.is_empty() { return; }
+        let rule = FilterRule {
+            pattern: self.filter_input.clone(),
+            is_regex: self.input_is_regex,
+            case_insensitive: self.input_case_insensitive,
+            whole_word: self.input_whole_word,
+            whole_line: self.input_whole_line,
+            enabled: true,
+        };
+        self.filters.push(rule);
+        self.filter_input.clear();
+    }
+
+    pub fn remove_selected_filter(&mut self) {
+        if self.filters.is_empty() { return; }
+        if self.selected_filter >= self.filters.len() { self.selected_filter = self.filters.len()-1; }
+        self.filters.remove(self.selected_filter);
+        if self.selected_filter >= self.filters.len() && !self.filters.is_empty() {
+            self.selected_filter = self.filters.len()-1;
+        }
+    }
+
+    pub fn toggle_selected_filter(&mut self) {
+        if let Some(rule) = self.filters.get_mut(self.selected_filter) {
+            rule.enabled = !rule.enabled;
+        }
+    }
+
+    pub fn move_selection_up(&mut self) {
+        if self.selected_filter > 0 { self.selected_filter -= 1; }
+    }
+    pub fn move_selection_down(&mut self) {
+        if self.selected_filter + 1 < self.filters.len() { self.selected_filter += 1; }
     }
 
     pub fn scroll_up(&mut self, n: usize) {

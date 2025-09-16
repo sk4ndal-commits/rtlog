@@ -22,7 +22,7 @@ struct Args {
     follow: bool,
 
     /// Regex filter to highlight matches (case-insensitive)
-    #[arg(short = 'e', long = "regex")]
+    #[arg(short = 'r', long = "regex")]
     regex: Option<String>,
 }
 

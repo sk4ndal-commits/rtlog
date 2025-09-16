@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 
 use crate::filter::build_filter;
 use crate::log::stream_file;
-use crate::state::AppState;
+use crate::state::{AppState, FilterFocus};
 use crate::ui::{poll_input, Ui, UiEvent};
 
 use crate::cli::Config;
@@ -39,7 +39,7 @@ pub async fn run(config: Config) -> Result<()> {
         }
 
         // Handle user input
-        match poll_input()? {
+        match poll_input(&state)? {
             UiEvent::Quit => break Ok(()),
             UiEvent::None => {}
             UiEvent::ScrollUp(n) => state.scroll_up(n),
@@ -47,6 +47,26 @@ pub async fn run(config: Config) -> Result<()> {
             UiEvent::Top => state.scroll_top(),
             UiEvent::Bottom => state.scroll_bottom(),
             UiEvent::ToggleAuto => state.toggle_auto_scroll(),
+
+            UiEvent::ToggleFilterPanel => { state.filter_panel_open = !state.filter_panel_open; },
+            UiEvent::InputChar(c) => {
+                if state.filter_panel_open && matches!(state.filter_focus, FilterFocus::Input) { state.filter_input.push(c); }
+            }
+            UiEvent::Backspace => {
+                if state.filter_panel_open && matches!(state.filter_focus, FilterFocus::Input) { state.filter_input.pop(); }
+            }
+            UiEvent::AddFilter => {
+                if state.filter_panel_open { state.add_filter_from_input(); }
+            }
+            UiEvent::ToggleInputRegex => { if state.filter_panel_open { state.input_is_regex = !state.input_is_regex; } }
+            UiEvent::ToggleInputCase => { if state.filter_panel_open { state.input_case_insensitive = !state.input_case_insensitive; } }
+            UiEvent::ToggleInputWord => { if state.filter_panel_open { state.input_whole_word = !state.input_whole_word; } }
+            UiEvent::ToggleInputLine => { if state.filter_panel_open { state.input_whole_line = !state.input_whole_line; } }
+            UiEvent::ToggleFilterEnabled => { if state.filter_panel_open { state.toggle_selected_filter(); } }
+            UiEvent::DeleteFilter => { if state.filter_panel_open { state.remove_selected_filter(); } }
+            UiEvent::FocusNext => { if state.filter_panel_open { state.filter_focus = match state.filter_focus { FilterFocus::Input => FilterFocus::List, FilterFocus::List => FilterFocus::Input }; } }
+            UiEvent::SelectUp => { if state.filter_panel_open { state.move_selection_up(); } }
+            UiEvent::SelectDown => { if state.filter_panel_open { state.move_selection_down(); } }
         }
 
         // Draw at most 30fps
