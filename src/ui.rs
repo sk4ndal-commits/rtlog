@@ -1,3 +1,6 @@
+//! TUI layer: rendering and input handling built on ratatui and crossterm.
+//! The UI reads state immutably and emits `UiEvent` to keep concerns separated.
+
 use crate::filter::{highlight_line, line_matches};
 use crate::state::{AppState, FilterFocus};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
@@ -9,6 +12,7 @@ use ratatui::widgets::{Block, Borders, Paragraph, Wrap, List, ListItem, Sparklin
 use ratatui::Terminal;
 use std::io;
 
+/// TUI façade over ratatui/crossterm. Owns the terminal and provides a `draw` method.
 pub struct Ui {
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
 }

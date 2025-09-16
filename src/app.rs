@@ -1,3 +1,10 @@
+//! Application runtime: wires inputs, state, and UI.
+//!
+//! Responsibilities:
+//! - Discover input files (or directories) from CLI.
+//! - Spawn log ingestion tasks (via the `log` module abstractions).
+//! - Drive the main event/render loop without blocking the UI.
+
 use anyhow::Result;
 use regex::Regex;
 use std::fs;
@@ -36,7 +43,7 @@ fn discover_files(inputs: &[PathBuf], recursive: bool) -> Vec<PathBuf> {
     files
 }
 
-/// Application runtime: wires inputs, state, and UI.
+/// Entry point for the async runtime loop.
 pub async fn run(config: Config) -> Result<()> {
     // Build filter from config
     let filter: Option<Regex> = build_filter(config.regex.as_deref())?;

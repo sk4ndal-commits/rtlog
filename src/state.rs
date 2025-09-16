@@ -1,3 +1,10 @@
+//!
+//! Core application state container.
+//! 
+//! Holds sources, filters, search, alerts, selection, and stats. The UI reads from this struct and
+//! the runtime mutates it in response to user input and incoming log lines. Methods are kept small
+//! and cohesive to ease testing and future extraction into submodules.
+
 use crate::filter::{compile_enabled_rules, FilterRule};
 use std::collections::VecDeque;
 use std::path::PathBuf;

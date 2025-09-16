@@ -1,3 +1,9 @@
+//! Filtering and highlighting utilities.
+//! 
+//! Provides `FilterRule` for user-defined patterns, helpers to compile patterns into regexes,
+//! and functions to filter and highlight lines in the UI. This module is pure and stateless
+//! aside from per-rule compiled regex caches, making it easy to test.
+
 use regex::{Regex, RegexBuilder};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
