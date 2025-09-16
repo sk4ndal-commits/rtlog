@@ -8,7 +8,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::time::sleep;
 
 /// Stream lines from a file. If `follow` is true, keep polling for new data.
-pub async fn stream_file(path: PathBuf, follow: bool, tx: Sender<String>) -> Result<()> {
+pub async fn stream_file(path: PathBuf, follow: bool, source_id: usize, tx: Sender<(usize, String)>) -> Result<()> {
     let mut file = File::open(&path).await?;
 
     // If following, seek to end so we only get new lines; otherwise read from start
@@ -34,7 +34,7 @@ pub async fn stream_file(path: PathBuf, follow: bool, tx: Sender<String>) -> Res
                 // Trim only trailing newlines, keep content
                 if buf.ends_with('\n') { buf.pop(); }
                 if buf.ends_with('\r') { buf.pop(); }
-                if tx.send(buf.clone()).await.is_err() {
+                if tx.send((source_id, buf.clone())).await.is_err() {
                     break; // receiver gone
                 }
             }

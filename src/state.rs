@@ -1,19 +1,27 @@
 use crate::filter::{compile_enabled_rules, FilterRule};
 use std::collections::VecDeque;
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FilterFocus { #[default] Input, List }
 
+#[derive(Debug, Default)]
+pub struct Source {
+    pub name: String,
+    pub path: PathBuf,
+    pub lines: Vec<String>,
+    pub scroll_offset: usize,
+    pub auto_scroll: bool,
+    pub selected_log: Option<usize>,
+}
+
 #[derive(Default)]
 pub struct AppState {
-    // All received log lines
-    pub lines: Vec<String>,
-    // Current scroll offset from the bottom; 0 means bottom (latest)
-    pub scroll_offset: usize,
-    // Whether auto-scroll is enabled; when user scrolls, this becomes false
-    pub auto_scroll: bool,
+    // Multiple sources
+    pub sources: Vec<Source>,
+    pub focused: usize,
 
-    // Filter system
+    // Filter system (global)
     pub filters: Vec<FilterRule>,
     pub filter_panel_open: bool,
     pub filter_input: String,
@@ -24,13 +32,11 @@ pub struct AppState {
     pub filter_focus: FilterFocus,
     pub selected_filter: usize,
 
-    // Context/details view
+    // Context/details view (per focused source)
     pub context_panel_open: bool,
     pub context_radius: usize,
-    // Selected log line (absolute index in lines vec)
-    pub selected_log: Option<usize>,
 
-    // Stats: rolling counts per second for last N seconds
+    // Stats: rolling counts per second for last N seconds (global)
     pub err_buckets: VecDeque<u16>,
     pub warn_buckets: VecDeque<u16>,
     pub bucket_epoch_sec: u64,
@@ -42,9 +48,8 @@ impl AppState {
     pub fn new(initial_cli_regex: Option<regex::Regex>) -> Self {
         let now_sec = current_epoch_sec();
         let mut s = Self {
-            lines: Vec::new(),
-            scroll_offset: 0,
-            auto_scroll: true,
+            sources: Vec::new(),
+            focused: 0,
             filters: Vec::new(),
             filter_panel_open: false,
             filter_input: String::new(),
@@ -56,7 +61,6 @@ impl AppState {
             selected_filter: 0,
             context_panel_open: false,
             context_radius: 3,
-            selected_log: None,
             err_buckets: VecDeque::from(vec![0; SPARK_WINDOW]),
             warn_buckets: VecDeque::from(vec![0; SPARK_WINDOW]),
             bucket_epoch_sec: now_sec.saturating_sub(SPARK_WINDOW as u64 - 1),
@@ -69,14 +73,28 @@ impl AppState {
         s
     }
 
-    pub fn push_line(&mut self, line: String) {
-        // Update stats before pushing to lines for responsiveness
+    pub fn set_sources<I: IntoIterator<Item = (String, PathBuf)>>(&mut self, inputs: I) {
+        self.sources = inputs.into_iter().map(|(name, path)| Source {
+            name,
+            path,
+            lines: Vec::new(),
+            scroll_offset: 0,
+            auto_scroll: true,
+            selected_log: None,
+        }).collect();
+        self.focused = 0;
+    }
+
+    pub fn current_source(&self) -> Option<&Source> { self.sources.get(self.focused) }
+    pub fn current_source_mut(&mut self) -> Option<&mut Source> { self.sources.get_mut(self.focused) }
+
+    pub fn push_line_for(&mut self, source_id: usize, line: String) {
+        // Update stats globally first to avoid borrow conflicts
         self.update_buckets_for_now();
         self.classify_and_count(&line);
-        // Store the line
-        self.lines.push(line);
-        if self.auto_scroll {
-            self.scroll_offset = 0;
+        if let Some(src) = self.sources.get_mut(source_id) {
+            src.lines.push(line);
+            if src.auto_scroll { src.scroll_offset = 0; }
         }
     }
 
@@ -164,57 +182,83 @@ impl AppState {
     }
 
     pub fn ensure_log_selection(&mut self) {
-        if self.selected_log.is_none() {
-            let end = self.lines.len().saturating_sub(self.scroll_offset);
-            let sel = end.saturating_sub(1);
-            self.selected_log = if self.lines.is_empty() { None } else { Some(sel) };
+        if let Some(src) = self.current_source_mut() {
+            if src.selected_log.is_none() {
+                let end = src.lines.len().saturating_sub(src.scroll_offset);
+                let sel = end.saturating_sub(1);
+                src.selected_log = if src.lines.is_empty() { None } else { Some(sel) };
+            }
         }
     }
 
     pub fn move_log_selection_up(&mut self) {
         self.ensure_log_selection();
-        if let Some(idx) = self.selected_log.as_mut() {
-            if *idx > 0 { *idx -= 1; }
+        if let Some(src) = self.current_source_mut() {
+            if let Some(idx) = src.selected_log.as_mut() {
+                if *idx > 0 { *idx -= 1; }
+            }
         }
     }
     pub fn move_log_selection_down(&mut self) {
         self.ensure_log_selection();
-        if let Some(idx) = self.selected_log.as_mut() {
-            let max = self.lines.len().saturating_sub(1);
-            if *idx < max { *idx += 1; }
+        if let Some(src) = self.current_source_mut() {
+            if let Some(idx) = src.selected_log.as_mut() {
+                let max = src.lines.len().saturating_sub(1);
+                if *idx < max { *idx += 1; }
+            }
         }
     }
 
     pub fn scroll_up(&mut self, n: usize) {
-        self.auto_scroll = false;
-        let max_offset = self.lines.len().saturating_sub(1);
-        self.scroll_offset = (self.scroll_offset + n).min(max_offset);
+        if let Some(src) = self.current_source_mut() {
+            src.auto_scroll = false;
+            let max_offset = src.lines.len().saturating_sub(1);
+            src.scroll_offset = (src.scroll_offset + n).min(max_offset);
+        }
     }
 
     pub fn scroll_down(&mut self, n: usize) {
-        if self.scroll_offset == 0 { return; }
-        self.scroll_offset = self.scroll_offset.saturating_sub(n);
-        if self.scroll_offset == 0 {
-            self.auto_scroll = true;
+        if let Some(src) = self.current_source_mut() {
+            if src.scroll_offset == 0 { return; }
+            src.scroll_offset = src.scroll_offset.saturating_sub(n);
+            if src.scroll_offset == 0 {
+                src.auto_scroll = true;
+            }
         }
     }
 
     pub fn scroll_top(&mut self) {
-        self.auto_scroll = false;
-        self.scroll_offset = self.lines.len().saturating_sub(1);
+        if let Some(src) = self.current_source_mut() {
+            src.auto_scroll = false;
+            src.scroll_offset = src.lines.len().saturating_sub(1);
+        }
     }
 
     pub fn scroll_bottom(&mut self) {
-        self.scroll_offset = 0;
-        self.auto_scroll = true;
+        if let Some(src) = self.current_source_mut() {
+            src.scroll_offset = 0;
+            src.auto_scroll = true;
+        }
     }
 
     pub fn toggle_auto_scroll(&mut self) {
-        if self.auto_scroll {
-            self.auto_scroll = false;
-        } else {
-            self.scroll_bottom();
+        if let Some(src) = self.current_source_mut() {
+            if src.auto_scroll {
+                src.auto_scroll = false;
+            } else {
+                src.scroll_offset = 0;
+                src.auto_scroll = true;
+            }
         }
+    }
+
+    pub fn focus_next_source(&mut self) {
+        if self.sources.is_empty() { return; }
+        self.focused = (self.focused + 1) % self.sources.len();
+    }
+    pub fn focus_prev_source(&mut self) {
+        if self.sources.is_empty() { return; }
+        if self.focused == 0 { self.focused = self.sources.len() - 1; } else { self.focused -= 1; }
     }
 }
 

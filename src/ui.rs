@@ -39,52 +39,67 @@ impl Ui {
         self.terminal.draw(|frame| {
             let area = frame.size();
 
-            // Layout: logs, status, stats, and optional context/filter panels
+            // Split horizontally: left sidebar (sources), right main panels
+            let cols = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Length(22), Constraint::Min(10)])
+                .split(area);
+
+            // Sidebar: list all sources, highlight focused
+            let side_items: Vec<ListItem> = state.sources.iter().enumerate().map(|(i, s)| {
+                let mut line = Line::from(s.name.clone());
+                if i == state.focused {
+                    line = apply_line_modifier(line, Modifier::REVERSED);
+                }
+                ListItem::new(line)
+            }).collect();
+            let side = List::new(side_items)
+                .block(Block::default().borders(Borders::ALL).title("Sources (Tab/Shift-Tab, [/]): switch"));
+            frame.render_widget(side, cols[0]);
+
+            // Right area: logs, status, stats, and optional context/filter panels
             let mut constraints = vec![Constraint::Min(1), Constraint::Length(1), Constraint::Length(5)];
-            // Context panel sits between stats and filter panels
-            if state.context_panel_open { 
-                // height: 2*radius + 3 (border + title + padding). Keep minimal 5.
+            if state.context_panel_open {
                 let h = (state.context_radius * 2 + 3) as u16;
                 constraints.push(Constraint::Length(h.max(5)));
             }
             if state.filter_panel_open { constraints.push(Constraint::Length(4)); }
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints(constraints)
-                .split(area);
+            let chunks = Layout::default().direction(Direction::Vertical).constraints(constraints).split(cols[1]);
 
-            // Determine visible slice based on scroll_offset
-            let height = chunks[0].height as usize - 2; // account for borders
+            // Determine visible slice from the focused source
+            let height = chunks[0].height as usize - 2; // borders
             let mut lines: Vec<Line> = Vec::new();
-            let total = state.lines.len();
-            let start = if total > height {
-                total.saturating_sub(height + state.scroll_offset)
-            } else { 0 };
-            let end = total.saturating_sub(state.scroll_offset);
-            for i in start..end {
-                let text = &state.lines[i];
-                if line_matches(text, &enabled) {
-                    let mut line = highlight_line(text, &enabled);
-                    if let Some(sel) = state.selected_log { if sel == i {
-                        line = apply_line_modifier(line, Modifier::REVERSED);
-                    }}
-                    lines.push(line);
+            let (total, scroll_offset, selected_log) = if let Some(src) = state.current_source() {
+                (src.lines.len(), src.scroll_offset, src.selected_log)
+            } else { (0, 0, None) };
+            let start = if total > height { total.saturating_sub(height + scroll_offset) } else { 0 };
+            let end = total.saturating_sub(scroll_offset);
+            if let Some(src) = state.current_source() {
+                for i in start..end {
+                    let text = &src.lines[i];
+                    if line_matches(text, &enabled) {
+                        let mut line = highlight_line(text, &enabled);
+                        if let Some(sel) = selected_log { if sel == i { line = apply_line_modifier(line, Modifier::REVERSED); }}
+                        lines.push(line);
+                    }
                 }
             }
 
+            let title = if let Some(src) = state.current_source() { format!("Logs - {} (Enter:Context, j/k:select)", src.name) } else { "Logs".to_string() };
             let para = Paragraph::new(lines)
-                .block(Block::default().borders(Borders::ALL).title("Logs (Enter:Context, j/k:select)"))
+                .block(Block::default().borders(Borders::ALL).title(title))
                 .style(Style::default())
                 .wrap(Wrap { trim: false });
             frame.render_widget(para, chunks[0]);
 
             // Status bar: show active filters count and flags of input
             let active = enabled.len();
+            let (auto, so) = if let Some(src) = state.current_source() { (src.auto_scroll, src.scroll_offset) } else { (true, 0) };
             let status = format!(
                 "Lines: {}  Scroll: {}  Mode: {}  Filters: {}  [/] Filter Panel  Enter:{}  r:regex={} i:case={} w:word={} x:line={}",
                 total,
-                state.scroll_offset,
-                if state.auto_scroll { "Auto" } else { "Paused" },
+                so,
+                if auto { "Auto" } else { "Paused" },
                 active,
                 if state.filter_panel_open { "Add Filter" } else { "Toggle Context" },
                 state.input_is_regex,
@@ -102,10 +117,9 @@ impl Ui {
 
             let mut next_chunk = 3;
             if state.context_panel_open {
-                if let Some(sel) = state.selected_log { 
+                if let Some(sel) = selected_log {
                     draw_context_panel(frame, chunks[next_chunk], state, sel);
                 } else {
-                    // no selection yet; nothing to draw but keep reserved space
                     let empty = Paragraph::new("No selection").block(Block::default().borders(Borders::ALL).title("Context"));
                     frame.render_widget(empty, chunks[next_chunk]);
                 }
@@ -166,7 +180,7 @@ fn draw_stats_panel(frame: &mut ratatui::Frame<'_>, area: Rect, state: &AppState
     // Left: totals and per-filter counts
     let mut lines: Vec<Line> = Vec::new();
     lines.push(Line::from(vec![Span::styled(
-        format!("Total lines: {}", state.lines.len()),
+        format!("Total lines: {}", state.current_source().map(|s| s.lines.len()).unwrap_or(0)), 
         Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
     )]));
 
@@ -222,7 +236,8 @@ fn apply_line_modifier(line: Line<'_>, modifier: Modifier) -> Line<'_> {
 }
 
 fn draw_context_panel(frame: &mut ratatui::Frame<'_>, area: Rect, state: &AppState, sel: usize) {
-    let total = state.lines.len();
+    let Some(src) = state.current_source() else { return; };
+    let total = src.lines.len();
     if total == 0 { return; }
     let radius = state.context_radius;
     let from = sel.saturating_sub(radius);
@@ -230,9 +245,7 @@ fn draw_context_panel(frame: &mut ratatui::Frame<'_>, area: Rect, state: &AppSta
 
     let mut lines: Vec<Line> = Vec::new();
     for i in from..to {
-        let content = state.lines[i].clone();
-        // Optional: prefix with index for clarity
-        // content = format!("{:>6}: {}", i + 1, content);
+        let content = src.lines[i].clone();
         let mut line = Line::from(content);
         if i == sel {
             // Highlight selected line distinctly in context view
@@ -274,6 +287,8 @@ pub enum UiEvent {
     FocusNext,
     SelectUp,
     SelectDown,
+    NextSource,
+    PrevSource,
 }
 
 pub fn poll_input(state: &AppState) -> anyhow::Result<UiEvent> {
@@ -294,6 +309,9 @@ pub fn poll_input(state: &AppState) -> anyhow::Result<UiEvent> {
                     KeyCode::Enter => { if state.filter_panel_open { UiEvent::AddFilter } else { UiEvent::ToggleContextPanel } },
                     KeyCode::Backspace => UiEvent::Backspace,
                     KeyCode::Tab => UiEvent::FocusNext,
+                    KeyCode::BackTab => UiEvent::PrevSource,
+                    KeyCode::Char(']') => UiEvent::NextSource,
+                    KeyCode::Char('[') => UiEvent::PrevSource,
                     KeyCode::Char('r') => UiEvent::ToggleInputRegex,
                     KeyCode::Char('i') => UiEvent::ToggleInputCase,
                     KeyCode::Char('w') => UiEvent::ToggleInputWord,

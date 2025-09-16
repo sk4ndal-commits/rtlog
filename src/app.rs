@@ -1,5 +1,7 @@
 use anyhow::Result;
 use regex::Regex;
+use std::fs;
+use std::path::PathBuf;
 use tokio::sync::mpsc;
 
 use crate::filter::build_filter;
@@ -9,23 +11,58 @@ use crate::ui::{poll_input, Ui, UiEvent};
 
 use crate::cli::Config;
 
+fn discover_files(inputs: &[PathBuf], recursive: bool) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let mut stack: Vec<PathBuf> = inputs.to_vec();
+    while let Some(p) = stack.pop() {
+        if let Ok(md) = fs::metadata(&p) {
+            if md.is_file() {
+                files.push(p);
+            } else if md.is_dir() {
+                if let Ok(rd) = fs::read_dir(&p) {
+                    for entry in rd.flatten() {
+                        let path = entry.path();
+                        if let Ok(md2) = entry.metadata() {
+                            if md2.is_file() { files.push(path); }
+                            else if md2.is_dir() && recursive { stack.push(path); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    files.sort();
+    files.dedup();
+    files
+}
+
 /// Application runtime: wires inputs, state, and UI.
 pub async fn run(config: Config) -> Result<()> {
     // Build filter from config
     let filter: Option<Regex> = build_filter(config.regex.as_deref())?;
 
-    // Channel for log lines
-    let (tx, mut rx) = mpsc::channel::<String>(1024);
+    // Resolve input files
+    let files = discover_files(&config.inputs, config.recursive);
 
-    // Spawn log reader
-    let path = config.file.clone();
-    let follow = config.follow;
-    tokio::spawn(async move {
-        let _ = stream_file(path, follow, tx).await;
-    });
+    // Channel for log lines tagged with source id
+    let (tx, mut rx) = mpsc::channel::<(usize, String)>(1024);
+
+    // Spawn log readers
+    for (i, path) in files.iter().cloned().enumerate() {
+        let txc = tx.clone();
+        let follow = config.follow;
+        tokio::spawn(async move {
+            let _ = stream_file(path, follow, i, txc).await;
+        });
+    }
 
     // Initialize UI and state
     let mut state = AppState::new(filter);
+    let sources_meta = files.iter().map(|p| {
+        let name = p.file_name().and_then(|s| s.to_str()).unwrap_or("?").to_string();
+        (name, p.clone())
+    });
+    state.set_sources(sources_meta);
     let mut ui = Ui::new()?;
 
     // Main loop
@@ -34,8 +71,8 @@ pub async fn run(config: Config) -> Result<()> {
 
     let res = loop {
         // Drain any available lines without blocking
-        while let Ok(line) = rx.try_recv() {
-            state.push_line(line);
+        while let Ok((sid, line)) = rx.try_recv() {
+            state.push_line_for(sid, line);
         }
 
         // Handle user input
@@ -72,6 +109,8 @@ pub async fn run(config: Config) -> Result<()> {
             UiEvent::FocusNext => { if state.filter_panel_open { state.filter_focus = match state.filter_focus { FilterFocus::Input => FilterFocus::List, FilterFocus::List => FilterFocus::Input }; } }
             UiEvent::SelectUp => { if state.filter_panel_open { state.move_selection_up(); } else { state.move_log_selection_up(); } }
             UiEvent::SelectDown => { if state.filter_panel_open { state.move_selection_down(); } else { state.move_log_selection_down(); } }
+            UiEvent::NextSource => { state.focus_next_source(); }
+            UiEvent::PrevSource => { state.focus_prev_source(); }
         }
 
         // Draw at most 30fps

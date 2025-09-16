@@ -20,6 +20,7 @@ Core qualities:
 - Context/Details view: inspect ±N lines around a selected entry without losing scroll position
 - Status bar with line count, scroll offset, auto-scroll mode, and active filters
 - New: Summary / Stats panel with live counts and sparklines for errors/warnings
+- New: Multi-source monitoring with a Sources sidebar and per-source focus
 
 See docs/ for more details:
 - docs/features.md
@@ -56,31 +57,45 @@ Note: Statically linking all dependencies on every platform can vary by system t
 
 Synopsis:
 ```
-rtlog [OPTIONS] FILE
+rtlog [OPTIONS] PATH...
 ```
 
 Arguments:
-- FILE  Path to the log file to read.
+- PATH...  One or more paths to log files or directories.
+           If a directory is provided, files within will be added; use -R/--recursive to walk subdirectories.
 
 Options:
-- -f, --follow       Follow the file for appended lines (tail -f)
-- -r, --regex PAT    Initial regex to highlight (case‑insensitive). This is optional; you can add more patterns from the Filter Panel at runtime.
-- -V, --version      Show version
-- -h, --help         Show help
+- -f, --follow         Follow the files for appended lines (tail -f)
+- -r, --regex PAT      Initial regex to highlight (case‑insensitive). This is optional; you can add more patterns from the Filter Panel at runtime.
+- -R, --recursive      When a PATH is a directory, include files from subdirectories recursively.
+- -V, --version        Show version
+- -h, --help           Show help
 
 Examples:
 - Follow syslog and highlight error lines:
   ```
-  rtlog -f -e "error|failed|panic" /var/log/syslog
+  rtlog -f -r "error|failed|panic" /var/log/syslog
   ```
 - View a static file once (no follow), highlighting IPv4 addresses:
   ```
-  rtlog -e "\b(\d{1,3}\.){3}\d{1,3}\b" ./app.log
+  rtlog -r "\b(\d{1,3}\.){3}\d{1,3}\b" ./app.log
+  ```
+- Monitor multiple files at once:
+  ```
+  rtlog -f ./app.log ./db.log
+  ```
+- Monitor a directory recursively:
+  ```
+  rtlog -f -R /var/log
+  ```
+- Mix files and directories:
+  ```
+  rtlog -f -R ./services/ /var/log/syslog ./custom.log
   ```
 
 Notes:
-- Current version expects a file path. Piped stdin input is not yet supported.
-- The Filter Panel is the primary way to add multiple filters interactively; CLI -e is kept for convenience and backward compatibility.
+- Piped stdin input is not yet supported.
+- The Filter Panel is the primary way to add multiple filters interactively; CLI -r is kept for convenience and quick start.
 
 
 ## TUI Controls
@@ -93,6 +108,8 @@ Notes:
 - Enter      When Filter Panel open: add filter from input; otherwise: open/close Context View for the selected log line
 - Backspace  Delete last character in filter input
 - Tab        Switch focus between input and filter list
+- Shift+Tab  Switch to previous source (in Sources sidebar)
+- [ / ]      Switch focused source backward/forward (Sources sidebar); main log view updates to that source
 - r/i/w/x    Toggle flags on filter input: regex, case-insensitive, whole-word, whole-line
 - d          Delete selected filter (when Filter Panel list has focus)
 - j/k        Move selection down/up (in Filter Panel list when open; otherwise selects a log line in the main view)
