@@ -23,6 +23,9 @@ pub struct FilterRule {
     pub whole_word: bool,
     pub whole_line: bool,
     pub enabled: bool,
+    // Runtime-only fields for performance and stats
+    pub compiled: Option<Regex>,
+    pub match_count: usize,
 }
 
 impl FilterRule {
@@ -43,6 +46,15 @@ impl FilterRule {
         builder.case_insensitive(self.case_insensitive);
         let re = builder.build()?;
         Ok(re)
+    }
+
+    /// Ensure the compiled regex is available in `compiled`
+    pub fn ensure_compiled(&mut self) {
+        if self.compiled.is_none() {
+            if let Ok(re) = self.compile() {
+                self.compiled = Some(re);
+            }
+        }
     }
 }
 
@@ -120,8 +132,8 @@ mod tests {
 
     #[test]
     fn test_line_matches_any() {
-        let r1 = FilterRule { pattern: "ERROR".into(), is_regex: false, case_insensitive: true, whole_word: false, whole_line: false, enabled: true };
-        let r2 = FilterRule { pattern: "WARN".into(), is_regex: false, case_insensitive: false, whole_word: false, whole_line: false, enabled: true };
+        let r1 = FilterRule { pattern: "ERROR".into(), is_regex: false, case_insensitive: true, whole_word: false, whole_line: false, enabled: true, compiled: None, match_count: 0 };
+        let r2 = FilterRule { pattern: "WARN".into(), is_regex: false, case_insensitive: false, whole_word: false, whole_line: false, enabled: true, compiled: None, match_count: 0 };
         let enabled = compile_enabled_rules(&[r1, r2]);
         assert!(line_matches("2025 ERROR something", &enabled));
         assert!(line_matches("2025 WARN something", &enabled));

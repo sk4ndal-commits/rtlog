@@ -19,6 +19,7 @@ Core qualities:
 - Scrollback navigation (Up/Down, PageUp/PageDown, Home/End)
 - Context/Details view: inspect ±N lines around a selected entry without losing scroll position
 - Status bar with line count, scroll offset, auto-scroll mode, and active filters
+- New: Summary / Stats panel with live counts and sparklines for errors/warnings
 
 See docs/ for more details:
 - docs/features.md
@@ -124,6 +125,19 @@ Matching behavior:
 - Selecting a line: Use j/k (with the Filter Panel closed) to move the selection up/down in the main log view. The selected line is highlighted.
 - Display: Shows ±N neighboring lines around the selection (default N=3). The selected line is emphasized.
 - Scroll position: Opening and closing the Context View does not change your current scroll position in the main log view.
+
+## Summary / Stats Panel
+- Always visible beneath the status bar.
+- Left side shows:
+  - Total lines processed (since program start).
+  - Counts of matches for each enabled filter pattern. These counts update in real time as new lines arrive.
+- Right side shows:
+  - Two rolling sparklines over the last 60 seconds: Errors/sec (red) and Warnings/sec (yellow).
+  - Classification is heuristic and file-agnostic: it looks for case-insensitive substrings "error" and "warn" in lines.
+
+Tips:
+- Use the Filter Panel ('/') to add patterns you care about; their match counters will start incrementing immediately.
+- The stats are kept lightweight and updated incrementally to avoid blocking the UI.
 
 
 ## How it works (high level)

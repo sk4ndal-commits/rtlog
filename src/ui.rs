@@ -5,7 +5,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Style, Modifier, Color};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph, Wrap, List, ListItem};
+use ratatui::widgets::{Block, Borders, Paragraph, Wrap, List, ListItem, Sparkline};
 use ratatui::Terminal;
 use std::io;
 
@@ -39,9 +39,9 @@ impl Ui {
         self.terminal.draw(|frame| {
             let area = frame.size();
 
-            // Layout: logs, status, and optional context/filter panels
-            let mut constraints = vec![Constraint::Min(1), Constraint::Length(1)];
-            // Context panel sits between status and filter panel
+            // Layout: logs, status, stats, and optional context/filter panels
+            let mut constraints = vec![Constraint::Min(1), Constraint::Length(1), Constraint::Length(5)];
+            // Context panel sits between stats and filter panels
             if state.context_panel_open { 
                 // height: 2*radius + 3 (border + title + padding). Keep minimal 5.
                 let h = (state.context_radius * 2 + 3) as u16;
@@ -97,7 +97,10 @@ impl Ui {
                 .wrap(Wrap { trim: true });
             frame.render_widget(status_para, chunks[1]);
 
-            let mut next_chunk = 2;
+            // Summary / Stats panel
+            draw_stats_panel(frame, chunks[2], state);
+
+            let mut next_chunk = 3;
             if state.context_panel_open {
                 if let Some(sel) = state.selected_log { 
                     draw_context_panel(frame, chunks[next_chunk], state, sel);
@@ -145,11 +148,66 @@ fn draw_filter_panel(frame: &mut ratatui::Frame<'_>, area: Rect, state: &AppStat
         ListItem::new(Line::from(vec![
             Span::raw(format!("{} {} {} ", sel, chk, flags)),
             Span::styled(f.pattern.clone(), Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(format!("  ({} matches)", f.match_count)),
         ]))
     }).collect();
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title("Active Filters (Space:toggle, d:delete, Tab:switch focus)"));
     frame.render_widget(list, rows[1]);
+}
+
+fn draw_stats_panel(frame: &mut ratatui::Frame<'_>, area: Rect, state: &AppState) {
+    // Split horizontally: left (summary text), right (sparklines stacked)
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+        .split(area);
+
+    // Left: totals and per-filter counts
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(vec![Span::styled(
+        format!("Total lines: {}", state.lines.len()),
+        Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+    )]));
+
+    // Show counts for enabled filters only
+    if state.filters.is_empty() {
+        lines.push(Line::from("No filters configured. Press '/' to add."));
+    } else {
+        for f in state.filters.iter().filter(|f| f.enabled) {
+            lines.push(Line::from(vec![
+                Span::raw("• "),
+                Span::styled(f.pattern.clone(), Style::default().fg(Color::Cyan)),
+                Span::raw(format!(": {}", f.match_count)),
+            ]));
+        }
+    }
+
+    let text = Paragraph::new(lines)
+        .block(Block::default().borders(Borders::ALL).title("Summary / Stats"))
+        .wrap(Wrap { trim: true });
+    frame.render_widget(text, cols[0]);
+
+    // Right: error/warn sparklines stacked
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(cols[1]);
+
+    let err_data: Vec<u64> = state.err_buckets.iter().map(|&v| v as u64).collect();
+    let warn_data: Vec<u64> = state.warn_buckets.iter().map(|&v| v as u64).collect();
+
+    let err = Sparkline::default()
+        .block(Block::default().borders(Borders::ALL).title("Errors/sec (last 60s)"))
+        .data(&err_data)
+        .style(Style::default().fg(Color::Red));
+    frame.render_widget(err, rows[0]);
+
+    let warn = Sparkline::default()
+        .block(Block::default().borders(Borders::ALL).title("Warnings/sec (last 60s)"))
+        .data(&warn_data)
+        .style(Style::default().fg(Color::Yellow));
+    frame.render_widget(warn, rows[1]);
 }
 
 fn apply_line_modifier(line: Line<'_>, modifier: Modifier) -> Line<'_> {
