@@ -36,7 +36,7 @@ struct Args {
     alerts: Vec<String>,
 
     /// Disable alerts entirely (no red highlights, no banner)
-    #[arg(long = "no-alerts")]
+    #[arg(long = "no-alerts", alias = "no-alert")]
     no_alerts: bool,
 }
 
