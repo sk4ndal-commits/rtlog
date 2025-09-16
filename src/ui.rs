@@ -45,7 +45,7 @@ impl Ui {
         let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
         let blink_on = (now_ms / 400) % 2 == 0;
         self.terminal.draw(|frame| {
-            let area = frame.size();
+            let area = frame.area();
 
             // Split horizontally: left sidebar (sources), right main panels
             let cols = Layout::default()
