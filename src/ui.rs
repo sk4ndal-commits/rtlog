@@ -397,8 +397,15 @@ pub fn poll_input(state: &AppState) -> anyhow::Result<UiEvent> {
                         _ => UiEvent::None,
                     });
                 }
+
+                // Check if we're in input mode for filter input
+                let in_filter_input = state.filter_panel_open && matches!(state.filter_focus, FilterFocus::Input);
+
                 return Ok(match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => UiEvent::Quit,
+                    // Always handle Esc to quit, but only handle 'q' to quit if not in input mode
+                    KeyCode::Esc => UiEvent::Quit,
+                    KeyCode::Char('q') if !in_filter_input => UiEvent::Quit,
+                    
                     KeyCode::Up => UiEvent::ScrollUp(1),
                     KeyCode::Down => UiEvent::ScrollDown(1),
                     KeyCode::PageUp => UiEvent::ScrollUp(10),
@@ -407,23 +414,27 @@ pub fn poll_input(state: &AppState) -> anyhow::Result<UiEvent> {
                     KeyCode::End => UiEvent::Bottom,
                     KeyCode::Char(' ') if key.modifiers.is_empty() => { if state.filter_panel_open && matches!(state.filter_focus, FilterFocus::List) { UiEvent::ToggleFilterEnabled } else { UiEvent::ToggleAuto } },
 
-                    KeyCode::Char('/') => UiEvent::ToggleFilterPanel,
-                    KeyCode::Char('?') => UiEvent::ToggleSearch,
+                    KeyCode::Char('/') if !in_filter_input => UiEvent::ToggleFilterPanel,
+                    KeyCode::Char('?') if !in_filter_input => UiEvent::ToggleSearch,
                     KeyCode::Enter => { if state.filter_panel_open { UiEvent::AddFilter } else { UiEvent::ToggleContextPanel } },
                     KeyCode::Backspace => UiEvent::Backspace,
                     KeyCode::Tab => UiEvent::FocusNext,
                     KeyCode::BackTab => UiEvent::PrevSource,
-                    KeyCode::Char(']') => UiEvent::NextSource,
-                    KeyCode::Char('[') => UiEvent::PrevSource,
-                    KeyCode::Char('r') => UiEvent::ToggleInputRegex,
-                    KeyCode::Char('i') => UiEvent::ToggleInputCase,
-                    KeyCode::Char('w') => UiEvent::ToggleInputWord,
-                    KeyCode::Char('x') => UiEvent::ToggleInputLine,
-                    KeyCode::Char('d') => UiEvent::DeleteFilter,
-                    KeyCode::Char('k') => UiEvent::SelectUp,
-                    KeyCode::Char('j') => UiEvent::SelectDown,
-                    KeyCode::Char('n') if key.modifiers.is_empty() && !(state.filter_panel_open && matches!(state.filter_focus, FilterFocus::Input)) => UiEvent::NextMatch,
-                    KeyCode::Char('N') if !(state.filter_panel_open && matches!(state.filter_focus, FilterFocus::Input)) => UiEvent::PrevMatch,
+                    KeyCode::Char(']') if !in_filter_input => UiEvent::NextSource,
+                    KeyCode::Char('[') if !in_filter_input => UiEvent::PrevSource,
+                    
+                    // Only handle these shortcuts if NOT in filter input mode
+                    KeyCode::Char('r') if !in_filter_input => UiEvent::ToggleInputRegex,
+                    KeyCode::Char('i') if !in_filter_input => UiEvent::ToggleInputCase,
+                    KeyCode::Char('w') if !in_filter_input => UiEvent::ToggleInputWord,
+                    KeyCode::Char('x') if !in_filter_input => UiEvent::ToggleInputLine,
+                    KeyCode::Char('d') if !in_filter_input => UiEvent::DeleteFilter,
+                    KeyCode::Char('k') if !in_filter_input => UiEvent::SelectUp,
+                    KeyCode::Char('j') if !in_filter_input => UiEvent::SelectDown,
+                    KeyCode::Char('n') if key.modifiers.is_empty() && !in_filter_input => UiEvent::NextMatch,
+                    KeyCode::Char('N') if !in_filter_input => UiEvent::PrevMatch,
+                    
+                    // Handle all other characters as input when in appropriate modes
                     KeyCode::Char(c) if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT => UiEvent::InputChar(c),
                     _ => UiEvent::None,
                 });
