@@ -81,24 +81,42 @@ impl Ui {
             let (total, scroll_offset, selected_log) = if let Some(src) = state.current_source() {
                 (src.lines.len(), src.scroll_offset, src.selected_log)
             } else { (0, 0, None) };
-            let start = if total > height { total.saturating_sub(height + scroll_offset) } else { 0 };
-            let end = total.saturating_sub(scroll_offset);
+            // Build a filtered viewport: collect matching indices from the end so that
+            // the Logs panel shows a continuous stream of matching lines, unaffected by
+            // interleaved non-matching lines.
+            let mut match_indices: Vec<usize> = Vec::new();
             if let Some(src) = state.current_source() {
-                for i in start..end {
+                let desired = height.saturating_add(scroll_offset);
+                let mut i = total;
+                while i > 0 {
+                    i -= 1;
                     let text = &src.lines[i];
                     if line_matches(text, &filter_regs) {
-                        let mut line = highlight_line(text, &highlights);
-                        // If this line matches an alert pattern, colorize it strongly
-                        if line_matches(text, &alert_regs) {
-                            // Make it red and optionally flashing reverse during active blink window
-                            line = apply_line_color(line, Color::Red);
-                            if now_ms < state.alert_blink_deadline_ms && blink_on {
-                                line = apply_line_modifier(line, Modifier::REVERSED);
-                            }
-                        }
-                        if let Some(sel) = selected_log { if sel == i { line = apply_line_modifier(line, Modifier::REVERSED); }}
-                        lines.push(line);
+                        match_indices.push(i);
+                        if match_indices.len() >= desired { break; }
                     }
+                }
+                // We collected from newest to oldest; reverse to chronological order
+                match_indices.reverse();
+                // Apply scroll_offset: drop the last `scroll_offset` matches
+                let visible_len = match_indices.len().saturating_sub(scroll_offset);
+                let start_vis = 0;
+                let end_vis = visible_len;
+                let window = &match_indices[start_vis..end_vis];
+
+                for &i in window.iter().rev().take(height).rev() { // ensure we only render up to viewport height
+                    let text = &src.lines[i];
+                    let mut line = highlight_line(text, &highlights);
+                    // If this line matches an alert pattern, colorize it strongly
+                    if !alert_regs.is_empty() && line_matches(text, &alert_regs) {
+                        // Make it red and optionally flashing reverse during active blink window
+                        line = apply_line_color(line, Color::Red);
+                        if now_ms < state.alert_blink_deadline_ms && blink_on {
+                            line = apply_line_modifier(line, Modifier::REVERSED);
+                        }
+                    }
+                    if let Some(sel) = selected_log { if sel == i { line = apply_line_modifier(line, Modifier::REVERSED); }}
+                    lines.push(line);
                 }
             }
 

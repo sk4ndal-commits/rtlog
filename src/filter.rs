@@ -136,6 +136,10 @@ pub fn highlight_line<'a>(text: &'a str, enabled: &[Regex]) -> Line<'a> {
 mod tests {
     use super::*;
 
+    fn line_to_string(line: &Line<'_>) -> String {
+        line.spans.iter().map(|s| s.content.to_string()).collect::<Vec<_>>().join("")
+    }
+
     #[test]
     fn test_line_matches_any() {
         let r1 = FilterRule { pattern: "ERROR".into(), is_regex: false, case_insensitive: true, whole_word: false, whole_line: false, enabled: true, compiled: None, match_count: 0 };
@@ -144,5 +148,15 @@ mod tests {
         assert!(line_matches("2025 ERROR something", &enabled));
         assert!(line_matches("2025 WARN something", &enabled));
         assert!(!line_matches("2025 info ok", &enabled));
+    }
+
+    #[test]
+    fn test_highlight_preserves_full_text() {
+        let text = "68547:2025-09-17 11:59:52.505 +02:00    DBG     AIS.CometYxlon.CA20.LineConnect.Kernel.LineConnectDriver_       Transmit message to device: oSTART:XXXX_XXX_XXX@Substrate-CARRIER123456789.02_1,38@Substrate-CARRIER123456789.02_2,37";
+        let rule = FilterRule { pattern: "LineConnectDriver_".into(), is_regex: false, case_insensitive: true, whole_word: false, whole_line: false, enabled: true, compiled: None, match_count: 0 };
+        let enabled = compile_enabled_rules(&[rule]);
+        let line = highlight_line(text, &enabled);
+        let rebuilt = line_to_string(&line);
+        assert_eq!(rebuilt, text);
     }
 }
